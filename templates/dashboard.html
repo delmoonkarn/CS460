@@ -14,6 +14,27 @@
     .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
     .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
     .scroll-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+    @media print {
+      @page { size: A4; margin: 12mm; }
+      body { background: white !important; color: #111 !important; font-size: 10pt; }
+      .no-print { display: none !important; }
+      header { position: static !important; background: white !important; border-bottom: 2px solid #333 !important; }
+      header h1, header p { color: #111 !important; }
+      .glass { background: white !important; border: 1px solid #cbd5e1 !important; backdrop-filter: none !important; box-shadow: none !important; }
+      .text-slate-100, .text-slate-200, .text-slate-300, .text-slate-400, .text-slate-500, .text-white { color: #111 !important; }
+      .text-slate-600 { color: #222 !important; }
+      .text-emerald-400, .text-emerald-300 { color: #047857 !important; }
+      .text-red-400, .text-red-300 { color: #b91c1c !important; }
+      .text-orange-300, .text-orange-400 { color: #c2410c !important; }
+      .text-amber-200, .text-amber-300 { color: #92400e !important; }
+      .bg-slate-800, .bg-slate-900, .bg-slate-950 { background: white !important; }
+      .bg-slate-800\/30, .bg-slate-900\/60, .bg-slate-950\/60 { background: white !important; }
+      .border-slate-700, .border-slate-800 { border-color: #cbd5e1 !important; }
+      section, .glass { break-inside: avoid; page-break-inside: avoid; }
+      canvas { background: white !important; }
+      #charts-secondary { break-before: page !important; page-break-before: always !important; }
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
@@ -51,6 +72,24 @@
       💡 ใช้ <span class="font-mono text-orange-300">llama-3.3-70b</span> สำหรับ batch ขนาดใหญ่ (CSV หลายร้อยรีวิว) · <span class="font-mono text-emerald-300">gemini-2.5-flash</span> เหมาะกับงานทั่วไป
     </p>
 
+    <div class="mb-4">
+      <label class="block text-xs text-slate-400 mb-2">Tier ที่คุณใช้ (มีผลกับการหน่วงเวลาตอน upload CSV)</label>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="cursor-pointer">
+          <input type="radio" name="tier" value="free" class="peer sr-only" checked>
+          <div class="px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-center text-xs peer-checked:border-slate-400 peer-checked:bg-slate-800 peer-checked:text-white transition">
+            🐢 Free · มีการหน่วง
+          </div>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="tier" value="paid" class="peer sr-only">
+          <div class="px-3 py-2 rounded-lg border border-slate-700 bg-slate-950 text-center text-xs peer-checked:border-yellow-500 peer-checked:bg-yellow-950/40 peer-checked:text-yellow-300 transition">
+            ⚡ Paid · ไม่หน่วง
+          </div>
+        </label>
+      </div>
+    </div>
+
     <div id="current-key" class="hidden mb-4 p-3 bg-emerald-950/30 border border-emerald-800/60 rounded-lg">
       <div class="text-xs text-emerald-400 mb-1">มี API key อยู่แล้ว</div>
       <div class="font-mono text-sm text-emerald-200" id="current-key-masked">••••</div>
@@ -75,23 +114,49 @@
   </div>
 </div>
 
+<!-- Confirm Modal (generic) -->
+<div id="confirm-modal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-sm items-center justify-center z-50 hidden">
+  <div class="max-w-md w-full mx-4 bg-slate-900 border border-slate-700 rounded-2xl p-6 shadow-2xl">
+    <h3 id="confirm-title" class="text-lg font-bold text-slate-100 mb-3">ยืนยัน</h3>
+    <div id="confirm-body" class="text-sm text-slate-300 mb-5 space-y-3"></div>
+    <div class="flex gap-2 justify-end">
+      <button id="confirm-cancel" class="px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg">ยกเลิก</button>
+      <button id="confirm-ok" class="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 rounded-lg font-medium">ดำเนินการ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Header -->
-<header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+<header class="no-print border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
   <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
     <div>
       <h1 class="text-xl md:text-2xl font-bold text-emerald-400">AI-Powered Product Review Analysis</h1>
-      <p class="text-xs text-slate-400">ระบบ AI ช่วยสรุปและวิเคราะห์รีวิวสินค้า</p>
+      <p class="text-xs text-slate-400">ระบบ AI ช่วยสรุปและวิเคราะห์รีวิวสินค้า · Model: <span id="current-model" class="font-mono text-slate-300">—</span></p>
     </div>
     <div class="flex gap-2 items-center flex-wrap">
       <div class="flex items-center gap-1 mr-2">
         <label class="text-xs text-slate-400 mr-1">ร้าน:</label>
         <select id="store-select" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"></select>
-        <button id="add-store-btn" class="px-2.5 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 rounded-lg" title="สร้างร้านใหม่">+ ร้าน</button>
-        <button id="delete-store-btn" class="px-2.5 py-2 text-sm bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded-lg" title="ลบร้านนี้">×</button>
+        <button id="add-store-btn" class="no-print px-2.5 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 rounded-lg" title="สร้างร้านใหม่">+ ร้าน</button>
+        <button id="delete-store-btn" class="no-print px-2.5 py-2 text-sm bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded-lg" title="ลบร้านนี้">×</button>
       </div>
-      <button id="settings-btn" class="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg" title="ตั้งค่า AI Provider &amp; API Key">⚙️ <span id="provider-badge">Provider</span></button>
-      <button id="refresh-btn" class="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg">รีเฟรช</button>
-      <button id="clear-btn" class="px-3 py-2 text-sm bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg">ล้างข้อมูล</button>
+      <button id="settings-btn" class="no-print px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg" title="ตั้งค่า AI Provider &amp; API Key">⚙️ API</button>
+      <div class="no-print relative">
+        <button id="export-btn" class="px-3 py-2 text-sm bg-sky-900/50 hover:bg-sky-900 text-sky-200 rounded-lg" title="ส่งออก Dashboard หรือข้อมูล">📥 Export <span class="text-xs">▾</span></button>
+        <div id="export-menu" class="hidden absolute right-0 mt-1 w-56 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-20 overflow-hidden">
+          <button id="export-pdf-opt" class="w-full text-left px-4 py-3 hover:bg-slate-800 transition">
+            <div class="text-sm font-medium text-slate-100">📄 บันทึกเป็น PDF</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">Stats + กราฟ sentiment/issues/positives</div>
+          </button>
+          <div class="border-t border-slate-800"></div>
+          <button id="export-csv-opt" class="w-full text-left px-4 py-3 hover:bg-slate-800 transition">
+            <div class="text-sm font-medium text-slate-100">📊 ดาวน์โหลด CSV</div>
+            <div class="text-[11px] text-slate-500 mt-0.5">ข้อมูลรีวิวพร้อมการวิเคราะห์ทั้งหมด</div>
+          </button>
+        </div>
+      </div>
+      <button id="refresh-btn" class="no-print px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg">รีเฟรช</button>
+      <button id="clear-btn" class="no-print px-3 py-2 text-sm bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg">ล้างข้อมูล</button>
     </div>
   </div>
 </header>
@@ -99,7 +164,7 @@
 <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
 
   <!-- Input Section -->
-  <section class="grid md:grid-cols-2 gap-6">
+  <section class="no-print grid md:grid-cols-2 gap-6">
     <div class="glass rounded-xl p-6">
       <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
         <span class="text-emerald-400">●</span> วิเคราะห์รีวิวรายตัว
@@ -132,7 +197,7 @@
   </section>
 
   <!-- Filter bar -->
-  <section class="glass rounded-xl p-4 flex flex-wrap gap-3 items-center">
+  <section class="no-print glass rounded-xl p-4 flex flex-wrap gap-3 items-center">
     <div class="flex items-center gap-2">
       <label class="text-sm text-slate-400">ช่วงเวลา</label>
       <select id="time-range" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-emerald-500">
@@ -174,12 +239,16 @@
     </div>
   </section>
 
-  <!-- Charts -->
-  <section class="grid md:grid-cols-3 gap-6">
-    <div class="glass rounded-xl p-6">
+  <!-- Charts: Sentiment (page 1 in PDF, with stats) -->
+  <section>
+    <div class="glass rounded-xl p-6 max-w-2xl mx-auto">
       <h3 class="text-sm font-semibold text-slate-300 mb-3">การกระจาย Sentiment</h3>
       <div class="relative h-64"><canvas id="sentiment-chart"></canvas></div>
     </div>
+  </section>
+
+  <!-- Charts: Top Issues + Top Positives (page 2 in PDF) -->
+  <section id="charts-secondary" class="grid md:grid-cols-2 gap-6">
     <div class="glass rounded-xl p-6">
       <h3 class="text-sm font-semibold text-slate-300 mb-3">Top Issues (ปัญหาที่พบบ่อย)</h3>
       <div class="relative h-64"><canvas id="issues-chart"></canvas></div>
@@ -191,7 +260,7 @@
   </section>
 
   <!-- Recent Analyses -->
-  <section class="glass rounded-xl p-6">
+  <section class="no-print glass rounded-xl p-6">
     <h3 class="text-lg font-semibold mb-4">รีวิวที่วิเคราะห์ล่าสุด</h3>
     <div class="overflow-x-auto scroll-thin">
       <table class="w-full text-sm">
@@ -210,11 +279,12 @@
       </table>
     </div>
     <p id="empty-state" class="text-center text-slate-500 py-8 text-sm">ยังไม่มีรีวิวที่วิเคราะห์ — ลองวางข้อความหรืออัปโหลด CSV ด้านบน</p>
+    <button id="history-toggle" class="hidden mt-4 w-full py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg transition"></button>
   </section>
 </main>
 
 <!-- Toast -->
-<div id="toast" class="fixed bottom-6 right-6 hidden bg-slate-800 border border-slate-700 px-4 py-3 rounded-lg shadow-xl text-sm"></div>
+<div id="toast" class="no-print fixed bottom-6 right-6 hidden bg-slate-800 border border-slate-700 px-4 py-3 rounded-lg shadow-xl text-sm"></div>
 
 <script>
 const SENTIMENT_COLORS = {
@@ -233,6 +303,9 @@ const SENTIMENT_LABEL_TH = {
 let sentimentChart, issuesChart, positivesChart;
 let currentStoreId = null;
 let storeList = [];
+let historyExpanded = false;
+let lastRecentRows = [];
+const HISTORY_PREVIEW = 10;
 
 function toast(msg, isError = false) {
   const el = document.getElementById('toast');
@@ -403,13 +476,29 @@ function renderBarChart(canvasId, data, color, setter) {
 function renderRecent(rows) {
   const tbody = document.getElementById('recent-tbody');
   const empty = document.getElementById('empty-state');
+  const toggle = document.getElementById('history-toggle');
+  lastRecentRows = rows || [];
+
   if (!rows || rows.length === 0) {
     tbody.innerHTML = '';
     empty.classList.remove('hidden');
+    toggle.classList.add('hidden');
     return;
   }
   empty.classList.add('hidden');
-  tbody.innerHTML = rows.map(r => `
+
+  const visible = historyExpanded ? rows : rows.slice(0, HISTORY_PREVIEW);
+
+  if (rows.length > HISTORY_PREVIEW) {
+    toggle.classList.remove('hidden');
+    toggle.textContent = historyExpanded
+      ? `▲ แสดงน้อยลง`
+      : `▼ ดูทั้งหมด (${rows.length} รายการ)`;
+  } else {
+    toggle.classList.add('hidden');
+  }
+
+  tbody.innerHTML = visible.map(r => `
     <tr class="hover:bg-slate-800/30">
       <td class="py-3 pr-3 font-mono text-xs text-slate-400 whitespace-nowrap">${formatTime(r.created_at)}</td>
       <td class="py-3 pr-3 max-w-xs"><div class="text-slate-200 line-clamp-2">${escapeHtml(r.review_text)}</div></td>
@@ -498,39 +587,283 @@ csvInput.addEventListener('change', () => {
   }
 });
 
+// --- CSV parsing & throttled batch upload ---
+const RATE_LIMITS = {
+  gemini: {
+    free: { delayMs: 4500, label: '15 คำขอ/นาที (free tier)' },
+    paid: { delayMs: 0,    label: 'paid tier · ไม่หน่วง' },
+  },
+  groq: {
+    free: { delayMs: 2200, label: '30 คำขอ/นาที (free tier)' },
+    paid: { delayMs: 0,    label: 'paid tier · ไม่หน่วง' },
+  },
+};
+
+function parseCSVRow(line) {
+  const result = [];
+  let cur = '', inQuotes = false, i = 0;
+  while (i < line.length) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"' && line[i+1] === '"') { cur += '"'; i += 2; }
+      else if (c === '"') { inQuotes = false; i++; }
+      else { cur += c; i++; }
+    } else {
+      if (c === ',') { result.push(cur); cur = ''; i++; }
+      else if (c === '"' && cur === '') { inQuotes = true; i++; }
+      else { cur += c; i++; }
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCSV(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.substring(1);
+  const lines = text.split(/\r?\n/).filter(l => l.length > 0);
+  if (lines.length === 0) return [];
+  const header = parseCSVRow(lines[0]);
+  const targets = ['review', 'text', 'comment', 'รีวิว', 'ความคิดเห็น'];
+  let col = 0;
+  for (let i = 0; i < header.length; i++) {
+    if (targets.includes(header[i].trim().toLowerCase())) { col = i; break; }
+  }
+  const reviews = [];
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseCSVRow(lines[i]);
+    const v = (row[col] || '').trim();
+    if (v) reviews.push(v);
+  }
+  return reviews;
+}
+
+function formatDuration(sec) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return `${sec} วินาที`;
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return s ? `${m} นาที ${s} วินาที` : `${m} นาที`;
+}
+
+function showConfirm({ title, bodyHTML, okText, okClass }) {
+  return new Promise(resolve => {
+    document.getElementById('confirm-title').textContent = title || 'ยืนยัน';
+    document.getElementById('confirm-body').innerHTML = bodyHTML || '';
+    const okBtn = document.getElementById('confirm-ok');
+    const cancelBtn = document.getElementById('confirm-cancel');
+    okBtn.textContent = okText || 'ดำเนินการ';
+    okBtn.className = `px-4 py-2 text-sm rounded-lg font-medium ${okClass || 'bg-emerald-600 hover:bg-emerald-500'}`;
+    const modal = document.getElementById('confirm-modal');
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+
+    const cleanup = (result) => {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    };
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+    const onKey = (e) => {
+      if (e.key === 'Escape') cleanup(false);
+      if (e.key === 'Enter') cleanup(true);
+    };
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+async function getActiveProviderInfo() {
+  const r = await fetch('/api/config/status');
+  const d = await r.json();
+  const provider = d.provider || 'gemini';
+  const tier = d.providers?.[provider]?.tier || 'free';
+  return { provider, tier };
+}
+
 csvBtn.addEventListener('click', async () => {
   if (csvInput.files.length === 0) return;
+  if (currentStoreId == null) { toast('กรุณาเลือกร้านก่อน', true); return; }
+
   const file = csvInput.files[0];
-  const fd = new FormData();
-  fd.append('file', file);
-  fd.append('store_id', String(currentStoreId));
+  const text = await file.text();
+  const reviews = parseCSV(text);
+
+  const prog = document.getElementById('csv-progress');
+  prog.classList.remove('hidden');
+
+  if (reviews.length === 0) {
+    prog.innerHTML = `<span class="text-red-400">✗</span> ไม่พบรีวิวในไฟล์ — ตรวจสอบว่ามีคอลัมน์ <code class="bg-slate-800 px-1 rounded">review</code> หรือไม่`;
+    return;
+  }
+
+  const { provider, tier } = await getActiveProviderInfo();
+  const { delayMs, label } = RATE_LIMITS[provider]?.[tier] || RATE_LIMITS.gemini.free;
+  const estimatedSec = Math.ceil((reviews.length * delayMs) / 1000);
+  const providerName = provider === 'gemini' ? 'Gemini' : 'Groq';
+
+  const displayTime = tier === 'paid' ? formatDuration(Math.ceil(reviews.length * 0.5)) : formatDuration(estimatedSec);
+  const tierBadge = tier === 'paid'
+    ? `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-yellow-950/40 border border-yellow-700/60 text-yellow-300">⚡ paid tier</span>`
+    : `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-slate-800 border border-slate-700 text-slate-300">🐢 free tier</span>`;
+
+  const bodyHTML = `
+    <div class="bg-slate-950/60 border border-slate-700 rounded-lg p-3">
+      <div class="text-emerald-300 font-bold text-2xl">${reviews.length} <span class="text-base text-slate-400 font-normal">รีวิว</span></div>
+      <div class="text-xs text-slate-400 mt-1 flex items-center gap-2">วิเคราะห์ด้วย <span class="font-mono text-slate-200">${providerName}</span> ${tierBadge}</div>
+    </div>
+    <div class="bg-slate-950/60 border border-slate-700 rounded-lg p-3 flex items-center justify-between">
+      <span class="text-slate-400 text-sm">⏱️ ใช้เวลาประมาณ</span>
+      <span class="font-mono text-emerald-300 text-base">${displayTime}</span>
+    </div>
+    ${tier === 'free' ? `
+    <div class="bg-amber-950/30 border border-amber-700/50 rounded-lg p-3 text-xs text-amber-200 leading-relaxed">
+      💡 ${providerName} free tier จำกัด <span class="font-mono">${label.replace(' (free tier)', '')}</span> · ระบบจะหน่วง <span class="font-mono">${(delayMs/1000).toFixed(1)}s</span> ระหว่างแต่ละคำขอ
+      <div class="text-slate-400 mt-1 text-[11px]">ถ้าคุณใช้ paid tier กรุณาตั้งค่าใน ⚙️ เพื่อข้ามการหน่วง</div>
+    </div>
+    ` : ''}
+    <div class="text-xs text-slate-500">⚠️ กรุณาเปิดหน้านี้ไว้จนกว่าจะเสร็จ</div>
+  `;
+
+  const proceed = await showConfirm({
+    title: 'ยืนยันการอัปโหลด CSV',
+    bodyHTML,
+    okText: 'เริ่มวิเคราะห์',
+  });
+  if (!proceed) {
+    prog.innerHTML = `<span class="text-slate-400">ยกเลิก</span>`;
+    return;
+  }
 
   csvBtn.disabled = true;
   csvBtn.textContent = 'กำลังประมวลผล...';
-  const prog = document.getElementById('csv-progress');
-  prog.classList.remove('hidden');
-  prog.textContent = 'กำลังส่งไฟล์ไปวิเคราะห์ด้วย AI...';
 
-  try {
-    const res = await fetch('/api/analyze/csv', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || 'Upload failed');
+  const startTime = Date.now();
+  let success = 0, errors = 0;
+  const errorMessages = [];
+
+  for (let i = 0; i < reviews.length; i++) {
+    const done = i;
+    const left = reviews.length - i;
+    const elapsedSec = (Date.now() - startTime) / 1000;
+    const remainingSec = left * delayMs / 1000;
+
+    prog.innerHTML = `
+      <div class="space-y-1">
+        <div class="flex items-center justify-between">
+          <span class="text-emerald-400 font-medium">วิเคราะห์ ${done + 1} / ${reviews.length}</span>
+          <span class="text-xs text-slate-400">${Math.round((done / reviews.length) * 100)}%</span>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div class="bg-emerald-500 h-full transition-all" style="width: ${(done / reviews.length) * 100}%"></div>
+        </div>
+        <div class="text-xs text-slate-400">⏱️ ผ่านไป ${formatDuration(elapsedSec)} · เหลือประมาณ ${formatDuration(remainingSec)}</div>
+        <div class="text-[11px] text-slate-500">${delayMs > 0 ? `หน่วง ${(delayMs/1000).toFixed(1)}s ระหว่างคำขอ · ${label}` : `${providerName} ${label}`}</div>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: reviews[i], store_id: currentStoreId })
+      });
+      if (res.ok) {
+        success++;
+      } else {
+        errors++;
+        const err = await res.json().catch(() => ({}));
+        if (errorMessages.length < 3) errorMessages.push(err.detail || `HTTP ${res.status}`);
+      }
+    } catch (e) {
+      errors++;
+      if (errorMessages.length < 3) errorMessages.push(e.message);
     }
-    const data = await res.json();
-    prog.innerHTML = `<span class="text-emerald-400">✓</span> ประมวลผล ${data.processed} รีวิว${data.errors.length ? ` · พบข้อผิดพลาด ${data.errors.length} รายการ` : ''}`;
-    csvInput.value = '';
-    csvLabel.textContent = 'คลิกหรือลากไฟล์ CSV มาที่นี่';
-    await loadStats();
-  } catch (e) {
-    prog.innerHTML = `<span class="text-red-400">✗</span> ${e.message}`;
-  } finally {
-    csvBtn.disabled = false;
-    csvBtn.textContent = 'อัปโหลดและวิเคราะห์';
+
+    if (i < reviews.length - 1) {
+      await new Promise(r => setTimeout(r, delayMs));
+    }
   }
+
+  const totalSec = (Date.now() - startTime) / 1000;
+  prog.innerHTML = `
+    <div class="space-y-1">
+      <div class="text-emerald-400">✓ เสร็จสิ้นใน ${formatDuration(totalSec)} · สำเร็จ ${success} รายการ${errors ? ` · ผิดพลาด ${errors} รายการ` : ''}</div>
+      ${errorMessages.length ? `<div class="text-xs text-red-400 font-mono mt-2">ตัวอย่าง error: ${errorMessages.join(' · ')}</div>` : ''}
+    </div>
+  `;
+  csvInput.value = '';
+  csvLabel.textContent = 'คลิกหรือลากไฟล์ CSV มาที่นี่';
+  csvBtn.disabled = false;
+  csvBtn.textContent = 'อัปโหลดและวิเคราะห์';
+  await loadAll();
 });
 
 document.getElementById('refresh-btn').addEventListener('click', loadAll);
+
+document.getElementById('history-toggle').addEventListener('click', () => {
+  historyExpanded = !historyExpanded;
+  renderRecent(lastRecentRows);
+});
+
+// --- Recolor charts for print (canvas text is baked in, can't be reached by CSS) ---
+const CHART_COLORS_SCREEN = { text: '#cbd5e1', tick: '#94a3b8', grid: '#1e293b', border: '#0f172a' };
+const CHART_COLORS_PRINT  = { text: '#111111', tick: '#111111', grid: '#d1d5db', border: '#ffffff' };
+
+function applyChartColors(palette) {
+  [sentimentChart, issuesChart, positivesChart].forEach(chart => {
+    if (!chart) return;
+    if (chart.options.plugins?.legend?.labels) {
+      chart.options.plugins.legend.labels.color = palette.text;
+    }
+    if (chart.options.scales) {
+      Object.values(chart.options.scales).forEach(scale => {
+        if (scale.ticks) scale.ticks.color = palette.tick;
+        if (scale.grid)  scale.grid.color  = palette.grid;
+      });
+    }
+    if (chart.config.type === 'doughnut' && chart.data.datasets[0]) {
+      chart.data.datasets[0].borderColor = palette.border;
+    }
+    chart.update('none');
+  });
+}
+
+window.addEventListener('beforeprint', () => applyChartColors(CHART_COLORS_PRINT));
+window.addEventListener('afterprint',  () => applyChartColors(CHART_COLORS_SCREEN));
+
+const exportBtn = document.getElementById('export-btn');
+const exportMenu = document.getElementById('export-menu');
+
+function closeExportMenu() { exportMenu.classList.add('hidden'); }
+
+exportBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  exportMenu.classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (!exportMenu.classList.contains('hidden') && !exportMenu.contains(e.target)) {
+    closeExportMenu();
+  }
+});
+
+document.getElementById('export-pdf-opt').addEventListener('click', () => {
+  closeExportMenu();
+  window.print();
+});
+
+document.getElementById('export-csv-opt').addEventListener('click', () => {
+  closeExportMenu();
+  if (currentStoreId == null) { toast('กรุณาเลือกร้านก่อน', true); return; }
+  const range = document.getElementById('time-range').value;
+  const sort = document.getElementById('sort-order').value;
+  const url = `/api/export/csv?store_id=${currentStoreId}&range=${encodeURIComponent(range)}&sort=${encodeURIComponent(sort)}`;
+  window.location = url;
+});
 
 document.getElementById('clear-btn').addEventListener('click', async () => {
   if (currentStoreId == null) return;
@@ -586,6 +919,16 @@ function updateProviderUI() {
   } else {
     currentKey.classList.add('hidden');
   }
+
+  // Sync tier radio with this provider's saved tier
+  const tier = (info && info.tier) || 'free';
+  const tierRadio = document.querySelector(`input[name="tier"][value="${tier}"]`);
+  if (tierRadio) tierRadio.checked = true;
+}
+
+function selectedTier() {
+  const el = document.querySelector('input[name="tier"]:checked');
+  return el ? el.value : 'free';
 }
 
 function openSetup({ blocking, status }) {
@@ -613,6 +956,16 @@ document.querySelectorAll('input[name="provider"]').forEach(r => {
   r.addEventListener('change', updateProviderUI);
 });
 
+document.querySelectorAll('input[name="tier"]').forEach(r => {
+  r.addEventListener('change', () => {
+    if (!setupStatus) return;
+    const provider = selectedProvider();
+    if (setupStatus.providers[provider]) {
+      setupStatus.providers[provider].tier = selectedTier();
+    }
+  });
+});
+
 function closeSetup() {
   setupModal.classList.add('hidden');
   setupModal.classList.remove('flex');
@@ -635,7 +988,7 @@ saveKeyBtn.addEventListener('click', async () => {
     const res = await fetch('/api/config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, key })
+      body: JSON.stringify({ provider, key, tier: selectedTier() })
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -654,9 +1007,11 @@ saveKeyBtn.addEventListener('click', async () => {
   }
 });
 
-function updateProviderBadge(provider) {
-  const badge = document.getElementById('provider-badge');
-  if (badge) badge.textContent = PROVIDER_META[provider]?.name || provider;
+function updateProviderBadge(provider, status) {
+  const el = document.getElementById('current-model');
+  if (!el) return;
+  const fromStatus = status?.providers?.[provider]?.model;
+  el.textContent = fromStatus || PROVIDER_META[provider]?.model || provider;
 }
 
 apiKeyInput.addEventListener('keydown', e => {
@@ -672,7 +1027,7 @@ document.getElementById('settings-btn').addEventListener('click', async () => {
 async function init() {
   const r = await fetch('/api/config/status');
   const status = await r.json();
-  updateProviderBadge(status.provider);
+  updateProviderBadge(status.provider, status);
   if (!status.configured) {
     openSetup({ blocking: true, status });
   } else {

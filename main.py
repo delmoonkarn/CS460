@@ -23,7 +23,7 @@ import httpx
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -62,17 +62,41 @@ PROVIDER = (os.getenv("PROVIDER", "gemini").strip().lower() or "gemini")
 if PROVIDER not in ("gemini", "groq"):
     PROVIDER = "gemini"
 
+
+def _normalize_tier(v: str) -> str:
+    v = (v or "").strip().lower()
+    return v if v in ("free", "paid") else "free"
+
+
+GEMINI_TIER = _normalize_tier(os.getenv("GEMINI_TIER", "free"))
+GROQ_TIER = _normalize_tier(os.getenv("GROQ_TIER", "free"))
+
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
 
 def _save_env() -> None:
-    """Persist provider + both keys to .env, preserving other entries (e.g. model overrides)."""
+    """Persist provider + both keys + tiers to .env, preserving other entries (e.g. model overrides)."""
     if not ENV_PATH.exists():
         ENV_PATH.touch()
     set_key(str(ENV_PATH), "PROVIDER", PROVIDER, quote_mode="never")
     set_key(str(ENV_PATH), "GEMINI_API_KEY", GEMINI_API_KEY, quote_mode="never")
     set_key(str(ENV_PATH), "GROQ_API_KEY", GROQ_API_KEY, quote_mode="never")
+    set_key(str(ENV_PATH), "GEMINI_TIER", GEMINI_TIER, quote_mode="never")
+    set_key(str(ENV_PATH), "GROQ_TIER", GROQ_TIER, quote_mode="never")
+
+
+def set_tier(provider: str, tier: str) -> None:
+    global GEMINI_TIER, GROQ_TIER
+    tier = _normalize_tier(tier)
+    if provider == "gemini":
+        GEMINI_TIER = tier
+    elif provider == "groq":
+        GROQ_TIER = tier
+    else:
+        return
+    _save_env()
+    print(f"[config] {provider} tier = {tier}", flush=True)
 
 
 def set_gemini_key(raw: str) -> None:
@@ -344,6 +368,7 @@ class ReviewRequest(BaseModel):
 class ConfigUpdate(BaseModel):
     provider: str
     key: str = ""
+    tier: str = ""  # "free" or "paid" — empty means leave unchanged
 
 
 class StoreCreate(BaseModel):
@@ -400,14 +425,15 @@ def delete_store(store_id: int):
 
 def _provider_status(name: str) -> dict:
     if name == "gemini":
-        k, model = GEMINI_API_KEY, GEMINI_MODEL
+        k, model, tier = GEMINI_API_KEY, GEMINI_MODEL, GEMINI_TIER
     else:
-        k, model = GROQ_API_KEY, GROQ_MODEL
+        k, model, tier = GROQ_API_KEY, GROQ_MODEL, GROQ_TIER
     return {
         "configured": bool(k),
         "last4": k[-4:] if len(k) >= 4 else None,
         "length": len(k),
         "model": model,
+        "tier": tier,
     }
 
 
@@ -466,7 +492,12 @@ def update_config(req: ConfigUpdate):
             set_gemini_key(req.key)
         else:
             set_groq_key(req.key)
-    else:
+
+    # Save tier preference if provided
+    if req.tier.strip():
+        set_tier(provider, req.tier)
+
+    if not new_key_provided:
         # No new key — must already have one for the target provider
         target_key = GEMINI_API_KEY if provider == "gemini" else GROQ_API_KEY
         if not target_key:
@@ -634,6 +665,50 @@ def api_stats(store_id: int, range: str = "all", sort: str = "desc"):
         "top_positives": positive_counter.most_common(10),
         "recent": recent,
     }
+
+
+@app.get("/api/export/csv")
+def export_csv(store_id: int, range: str = "all", sort: str = "desc"):
+    _assert_store_exists(store_id)
+    order = "ASC" if sort == "asc" else "DESC"
+    cutoff = _range_to_cutoff(range)
+
+    where = ["store_id = ?"]
+    params: list = [store_id]
+    if cutoff:
+        where.append("created_at >= ?")
+        params.append(cutoff)
+    where_sql = "WHERE " + " AND ".join(where)
+
+    with get_db() as conn:
+        store_name = conn.execute("SELECT name FROM stores WHERE id = ?", (store_id,)).fetchone()["name"]
+        rows = conn.execute(
+            f"SELECT * FROM reviews {where_sql} ORDER BY created_at {order}",
+            params,
+        ).fetchall()
+
+    output = io.StringIO()
+    output.write("﻿")  # BOM so Excel opens as UTF-8
+    writer = csv.writer(output)
+    writer.writerow(["Date (UTC)", "Review", "Sentiment", "Score", "Issues", "Positives", "Recommendation"])
+    for r in rows:
+        writer.writerow([
+            r["created_at"],
+            r["review_text"],
+            r["sentiment"],
+            r["score"],
+            " · ".join(json.loads(r["issues"])),
+            " · ".join(json.loads(r["positives"])),
+            r["recommendation"],
+        ])
+
+    safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", store_name)[:40] or "store"
+    filename = f"reviews_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.delete("/api/reviews")
