@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Review Analysis | Chill Kill Club</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Sarabun', system-ui, sans-serif; }
+    .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.08); }
+    .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+    .scroll-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+<!-- Setup Modal -->
+<div id="setup-modal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-sm items-center justify-center z-50 hidden">
+  <div class="max-w-md w-full mx-4 bg-slate-900 border border-slate-700 rounded-2xl p-8 shadow-2xl">
+    <div class="flex items-start justify-between mb-2">
+      <h2 id="setup-title" class="text-2xl font-bold text-emerald-400">ตั้งค่า AI Provider</h2>
+      <button id="setup-close" class="text-slate-500 hover:text-slate-200 text-xl leading-none hidden">×</button>
+    </div>
+    <p id="setup-subtitle" class="text-sm text-slate-400 mb-4">เลือก provider แล้วใส่ API key</p>
+
+    <div class="mb-3">
+      <label class="block text-xs text-slate-400 mb-2">เลือก Model</label>
+      <div class="grid grid-cols-2 gap-2">
+        <label class="cursor-pointer">
+          <input type="radio" name="provider" value="gemini" class="peer sr-only" checked>
+          <div class="px-3 py-3 rounded-lg border border-slate-700 bg-slate-950 text-center peer-checked:border-emerald-500 peer-checked:bg-emerald-950/40 peer-checked:text-emerald-300 transition">
+            <div class="font-mono text-xs">gemini-2.5-flash</div>
+            <div class="text-[10px] text-slate-500 mt-1">คุณภาพดี · free tier ~15 RPM</div>
+          </div>
+        </label>
+        <label class="cursor-pointer">
+          <input type="radio" name="provider" value="groq" class="peer sr-only">
+          <div class="px-3 py-3 rounded-lg border border-slate-700 bg-slate-950 text-center peer-checked:border-orange-500 peer-checked:bg-orange-950/40 peer-checked:text-orange-300 transition">
+            <div class="font-mono text-xs">llama-3.3-70b</div>
+            <div class="text-[10px] text-slate-500 mt-1">เร็ว · free tier ~30 RPM</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <p class="text-xs text-slate-500 mb-4 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5">
+      💡 ใช้ <span class="font-mono text-orange-300">llama-3.3-70b</span> สำหรับ batch ขนาดใหญ่ (CSV หลายร้อยรีวิว) · <span class="font-mono text-emerald-300">gemini-2.5-flash</span> เหมาะกับงานทั่วไป
+    </p>
+
+    <div id="current-key" class="hidden mb-4 p-3 bg-emerald-950/30 border border-emerald-800/60 rounded-lg">
+      <div class="text-xs text-emerald-400 mb-1">มี API key อยู่แล้ว</div>
+      <div class="font-mono text-sm text-emerald-200" id="current-key-masked">••••</div>
+    </div>
+
+    <a id="provider-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
+       class="block mb-4 text-sm text-sky-400 hover:text-sky-300">
+      → รับ API key ฟรี (เปิดในแท็บใหม่)
+    </a>
+
+    <label class="block text-xs text-slate-400 mb-1" id="api-key-label">GEMINI_API_KEY</label>
+    <input type="password" id="api-key-input" placeholder="AIza..." autocomplete="off"
+      class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm font-mono focus:outline-none focus:border-emerald-500" />
+
+    <button id="save-key-btn"
+      class="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 py-2.5 rounded-lg font-medium transition">
+      บันทึก
+    </button>
+
+    <div id="setup-error" class="mt-3 text-sm text-red-400 hidden"></div>
+    <p class="mt-4 text-xs text-slate-500">Key จะถูกบันทึกไว้ในไฟล์ <code class="bg-slate-800 px-1 rounded">.env</code> บนเครื่องคุณเท่านั้น</p>
+  </div>
+</div>
+
+<!-- Header -->
+<header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-10">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-xl md:text-2xl font-bold text-emerald-400">AI-Powered Product Review Analysis</h1>
+      <p class="text-xs text-slate-400">ระบบ AI ช่วยสรุปและวิเคราะห์รีวิวสินค้า</p>
+    </div>
+    <div class="flex gap-2 items-center flex-wrap">
+      <div class="flex items-center gap-1 mr-2">
+        <label class="text-xs text-slate-400 mr-1">ร้าน:</label>
+        <select id="store-select" class="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"></select>
+        <button id="add-store-btn" class="px-2.5 py-2 text-sm bg-emerald-700 hover:bg-emerald-600 rounded-lg" title="สร้างร้านใหม่">+ ร้าน</button>
+        <button id="delete-store-btn" class="px-2.5 py-2 text-sm bg-red-900/40 hover:bg-red-900/70 text-red-300 rounded-lg" title="ลบร้านนี้">×</button>
+      </div>
+      <button id="settings-btn" class="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg" title="ตั้งค่า AI Provider &amp; API Key">⚙️ <span id="provider-badge">Provider</span></button>
+      <button id="refresh-btn" class="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg">รีเฟรช</button>
+      <button id="clear-btn" class="px-3 py-2 text-sm bg-red-900/50 hover:bg-red-900 text-red-200 rounded-lg">ล้างข้อมูล</button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+  <!-- Input Section -->
+  <section class="grid md:grid-cols-2 gap-6">
+    <div class="glass rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+        <span class="text-emerald-400">●</span> วิเคราะห์รีวิวรายตัว
+      </h2>
+      <textarea id="review-input" rows="4" placeholder="วางข้อความรีวิวที่ต้องการวิเคราะห์ที่นี่..."
+        class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-emerald-500"></textarea>
+      <button id="analyze-btn" class="mt-3 w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed py-2.5 rounded-lg font-medium transition">
+        วิเคราะห์ด้วย AI
+      </button>
+      <div id="single-result" class="mt-4 hidden"></div>
+    </div>
+
+    <div class="glass rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+        <span class="text-sky-400">●</span> อัปโหลด CSV (Batch)
+      </h2>
+      <label class="block border-2 border-dashed border-slate-700 rounded-lg p-8 text-center cursor-pointer hover:border-sky-500 transition">
+        <input type="file" id="csv-input" accept=".csv" class="hidden" />
+        <div class="text-slate-400 text-sm">
+          <div class="text-3xl mb-2">📄</div>
+          <div id="csv-label">คลิกหรือลากไฟล์ CSV มาที่นี่</div>
+          <div class="text-xs text-slate-500 mt-1">คอลัมน์แรกหรือคอลัมน์ชื่อ "review" จะถูกใช้</div>
+        </div>
+      </label>
+      <button id="csv-upload-btn" disabled class="mt-3 w-full bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed py-2.5 rounded-lg font-medium transition">
+        อัปโหลดและวิเคราะห์
+      </button>
+      <div id="csv-progress" class="mt-4 text-sm text-slate-400 hidden"></div>
+    </div>
+  </section>
+
+  <!-- Filter bar -->
+  <section class="glass rounded-xl p-4 flex flex-wrap gap-3 items-center">
+    <div class="flex items-center gap-2">
+      <label class="text-sm text-slate-400">ช่วงเวลา</label>
+      <select id="time-range" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-emerald-500">
+        <option value="all">ทั้งหมด</option>
+        <option value="1h">1 ชั่วโมงล่าสุด</option>
+        <option value="today">วันนี้</option>
+        <option value="24h">24 ชั่วโมงล่าสุด</option>
+        <option value="7d">7 วันล่าสุด</option>
+        <option value="30d">30 วันล่าสุด</option>
+      </select>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-sm text-slate-400">เรียง</label>
+      <select id="sort-order" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-emerald-500">
+        <option value="desc">ใหม่ → เก่า</option>
+        <option value="asc">เก่า → ใหม่</option>
+      </select>
+    </div>
+    <button id="reset-filters" class="ml-auto px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 rounded-lg">↺ รีเซ็ตตัวกรอง</button>
+  </section>
+
+  <!-- Stats Cards -->
+  <section class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="glass rounded-xl p-5">
+      <div class="text-xs text-slate-400">รีวิวทั้งหมด</div>
+      <div class="text-3xl font-bold mt-1" id="stat-total">0</div>
+    </div>
+    <div class="glass rounded-xl p-5">
+      <div class="text-xs text-slate-400">คะแนนเฉลี่ย</div>
+      <div class="text-3xl font-bold mt-1 text-emerald-400" id="stat-score">0</div>
+    </div>
+    <div class="glass rounded-xl p-5">
+      <div class="text-xs text-slate-400">Positive</div>
+      <div class="text-3xl font-bold mt-1 text-emerald-400" id="stat-positive">0</div>
+    </div>
+    <div class="glass rounded-xl p-5">
+      <div class="text-xs text-slate-400">Negative</div>
+      <div class="text-3xl font-bold mt-1 text-red-400" id="stat-negative">0</div>
+    </div>
+  </section>
+
+  <!-- Charts -->
+  <section class="grid md:grid-cols-3 gap-6">
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold text-slate-300 mb-3">การกระจาย Sentiment</h3>
+      <div class="relative h-64"><canvas id="sentiment-chart"></canvas></div>
+    </div>
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold text-slate-300 mb-3">Top Issues (ปัญหาที่พบบ่อย)</h3>
+      <div class="relative h-64"><canvas id="issues-chart"></canvas></div>
+    </div>
+    <div class="glass rounded-xl p-6">
+      <h3 class="text-sm font-semibold text-slate-300 mb-3">Top Positives (จุดเด่น)</h3>
+      <div class="relative h-64"><canvas id="positives-chart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- Recent Analyses -->
+  <section class="glass rounded-xl p-6">
+    <h3 class="text-lg font-semibold mb-4">รีวิวที่วิเคราะห์ล่าสุด</h3>
+    <div class="overflow-x-auto scroll-thin">
+      <table class="w-full text-sm">
+        <thead class="text-left text-xs uppercase text-slate-400 border-b border-slate-800">
+          <tr>
+            <th class="py-2 pr-3">เวลา</th>
+            <th class="py-2 pr-3">รีวิว</th>
+            <th class="py-2 pr-3">Sentiment</th>
+            <th class="py-2 pr-3">Score</th>
+            <th class="py-2 pr-3">ปัญหา</th>
+            <th class="py-2 pr-3">ข้อดี</th>
+            <th class="py-2">คำแนะนำ</th>
+          </tr>
+        </thead>
+        <tbody id="recent-tbody" class="divide-y divide-slate-800/60"></tbody>
+      </table>
+    </div>
+    <p id="empty-state" class="text-center text-slate-500 py-8 text-sm">ยังไม่มีรีวิวที่วิเคราะห์ — ลองวางข้อความหรืออัปโหลด CSV ด้านบน</p>
+  </section>
+</main>
+
+<!-- Toast -->
+<div id="toast" class="fixed bottom-6 right-6 hidden bg-slate-800 border border-slate-700 px-4 py-3 rounded-lg shadow-xl text-sm"></div>
+
+<script>
+const SENTIMENT_COLORS = {
+  positive: '#10b981',
+  negative: '#ef4444',
+  neutral:  '#94a3b8',
+  mixed:    '#f59e0b',
+};
+const SENTIMENT_LABEL_TH = {
+  positive: 'บวก',
+  negative: 'ลบ',
+  neutral: 'กลาง',
+  mixed: 'ผสม',
+};
+
+let sentimentChart, issuesChart, positivesChart;
+let currentStoreId = null;
+let storeList = [];
+
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
+  el.classList.toggle('border-red-700', isError);
+  el.classList.toggle('text-red-200', isError);
+  setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+function sentimentBadge(s) {
+  const color = SENTIMENT_COLORS[s] || '#94a3b8';
+  return `<span class="inline-block px-2 py-0.5 rounded text-xs font-medium" style="background:${color}20;color:${color};border:1px solid ${color}50">${s}</span>`;
+}
+
+function chipList(items, colorClass) {
+  if (!items || items.length === 0) return '<span class="text-slate-600">—</span>';
+  return items.map(i => `<span class="inline-block ${colorClass} text-xs px-2 py-0.5 rounded mr-1 mb-1">${i}</span>`).join('');
+}
+
+function formatTime(s) {
+  if (!s) return '—';
+  // SQLite CURRENT_TIMESTAMP returns 'YYYY-MM-DD HH:MM:SS' in UTC
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return s;
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function loadStores() {
+  const r = await fetch('/api/stores');
+  storeList = await r.json();
+  const sel = document.getElementById('store-select');
+  sel.innerHTML = storeList.map(s =>
+    `<option value="${s.id}">${escapeHtml(s.name)} (${s.review_count})</option>`
+  ).join('');
+
+  const saved = localStorage.getItem('store_id');
+  if (saved && storeList.some(s => String(s.id) === saved)) {
+    sel.value = saved;
+  }
+  currentStoreId = storeList.length ? parseInt(sel.value, 10) : null;
+  document.getElementById('delete-store-btn').disabled = storeList.length <= 1;
+}
+
+async function loadStats() {
+  if (currentStoreId == null) return;
+  const range = document.getElementById('time-range').value;
+  const sort = document.getElementById('sort-order').value;
+  const res = await fetch(`/api/stats?store_id=${currentStoreId}&range=${encodeURIComponent(range)}&sort=${encodeURIComponent(sort)}`);
+  const data = await res.json();
+  renderStats(data);
+}
+
+async function loadAll() {
+  await loadStores();
+  await loadStats();
+}
+
+document.getElementById('store-select').addEventListener('change', e => {
+  currentStoreId = parseInt(e.target.value, 10);
+  localStorage.setItem('store_id', String(currentStoreId));
+  loadStats();
+});
+
+document.getElementById('add-store-btn').addEventListener('click', async () => {
+  const name = prompt('ชื่อร้านใหม่:');
+  if (!name || !name.trim()) return;
+  const res = await fetch('/api/stores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: name.trim() })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    toast('สร้างร้านไม่สำเร็จ: ' + (err.detail || 'unknown'), true);
+    return;
+  }
+  const created = await res.json();
+  await loadStores();
+  document.getElementById('store-select').value = String(created.id);
+  currentStoreId = created.id;
+  localStorage.setItem('store_id', String(currentStoreId));
+  await loadStats();
+  toast(`สร้างร้าน "${created.name}" แล้ว`);
+});
+
+document.getElementById('delete-store-btn').addEventListener('click', async () => {
+  if (currentStoreId == null) return;
+  const current = storeList.find(s => s.id === currentStoreId);
+  if (!current) return;
+  if (!confirm(`ลบร้าน "${current.name}" และรีวิวทั้งหมดของร้านนี้?`)) return;
+  const res = await fetch(`/api/stores/${currentStoreId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    toast('ลบร้านไม่สำเร็จ: ' + (err.detail || 'unknown'), true);
+    return;
+  }
+  localStorage.removeItem('store_id');
+  currentStoreId = null;
+  await loadAll();
+  toast('ลบร้านแล้ว');
+});
+
+document.getElementById('time-range').addEventListener('change', loadStats);
+document.getElementById('sort-order').addEventListener('change', loadStats);
+document.getElementById('reset-filters').addEventListener('click', () => {
+  document.getElementById('time-range').value = 'all';
+  document.getElementById('sort-order').value = 'desc';
+  loadStats();
+  toast('รีเซ็ตตัวกรองแล้ว');
+});
+
+function renderStats(data) {
+  document.getElementById('stat-total').textContent = data.total;
+  document.getElementById('stat-score').textContent = data.avg_score;
+  document.getElementById('stat-positive').textContent = data.sentiment_counts.positive;
+  document.getElementById('stat-negative').textContent = data.sentiment_counts.negative;
+
+  renderSentimentChart(data.sentiment_counts);
+  renderBarChart('issues-chart', data.top_issues, '#ef4444', (c) => issuesChart = c);
+  renderBarChart('positives-chart', data.top_positives, '#10b981', (c) => positivesChart = c);
+  renderRecent(data.recent);
+}
+
+function renderSentimentChart(counts) {
+  const ctx = document.getElementById('sentiment-chart');
+  const labels = ['positive', 'negative', 'neutral', 'mixed'];
+  const values = labels.map(l => counts[l] || 0);
+  const colors = labels.map(l => SENTIMENT_COLORS[l]);
+  const displayLabels = labels.map(l => SENTIMENT_LABEL_TH[l]);
+
+  if (sentimentChart) sentimentChart.destroy();
+  sentimentChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels: displayLabels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#0f172a', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '65%',
+      plugins: { legend: { position: 'bottom', labels: { color: '#cbd5e1', font: { size: 11 } } } }
+    }
+  });
+}
+
+function renderBarChart(canvasId, data, color, setter) {
+  const ctx = document.getElementById(canvasId);
+  const labels = data.map(d => d[0]);
+  const values = data.map(d => d[1]);
+
+  const existing = canvasId === 'issues-chart' ? issuesChart : positivesChart;
+  if (existing) existing.destroy();
+
+  const chart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: values, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1 }] },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', stepSize: 1 }, grid: { color: '#1e293b' } },
+        y: { ticks: { color: '#cbd5e1', font: { size: 11 } }, grid: { display: false } }
+      }
+    }
+  });
+  setter(chart);
+}
+
+function renderRecent(rows) {
+  const tbody = document.getElementById('recent-tbody');
+  const empty = document.getElementById('empty-state');
+  if (!rows || rows.length === 0) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  tbody.innerHTML = rows.map(r => `
+    <tr class="hover:bg-slate-800/30">
+      <td class="py-3 pr-3 font-mono text-xs text-slate-400 whitespace-nowrap">${formatTime(r.created_at)}</td>
+      <td class="py-3 pr-3 max-w-xs"><div class="text-slate-200 line-clamp-2">${escapeHtml(r.review_text)}</div></td>
+      <td class="py-3 pr-3">${sentimentBadge(r.sentiment)}</td>
+      <td class="py-3 pr-3 font-mono text-slate-300">${r.score}</td>
+      <td class="py-3 pr-3 max-w-xs">${chipList(r.issues, 'bg-red-900/40 text-red-300')}</td>
+      <td class="py-3 pr-3 max-w-xs">${chipList(r.positives, 'bg-emerald-900/40 text-emerald-300')}</td>
+      <td class="py-3 text-slate-300 max-w-md">${escapeHtml(r.recommendation || '—')}</td>
+    </tr>
+  `).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Single review
+document.getElementById('analyze-btn').addEventListener('click', async () => {
+  const text = document.getElementById('review-input').value.trim();
+  if (!text) return toast('กรุณาใส่ข้อความรีวิว', true);
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.textContent = 'กำลังวิเคราะห์...';
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, store_id: currentStoreId })
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let detail = body;
+      try { const o = JSON.parse(body); detail = o.detail || JSON.stringify(o); } catch (_) {}
+      throw new Error(`HTTP ${res.status} — ${detail || '(empty body)'}`);
+    }
+    const data = await res.json();
+    showSingleResult(data);
+    document.getElementById('review-input').value = '';
+    await loadStats();
+  } catch (e) {
+    showSingleError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'วิเคราะห์ด้วย AI';
+  }
+});
+
+function showSingleError(msg) {
+  const el = document.getElementById('single-result');
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="bg-red-950/40 border border-red-800 rounded-lg p-4 text-sm">
+      <div class="text-red-300 font-semibold mb-1">วิเคราะห์ไม่สำเร็จ</div>
+      <div class="text-red-200 font-mono text-xs break-words">${escapeHtml(msg)}</div>
+    </div>
+  `;
+}
+
+function showSingleResult(data) {
+  const el = document.getElementById('single-result');
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="bg-slate-900/70 border border-slate-700 rounded-lg p-4 text-sm">
+      <div class="flex items-center justify-between mb-2">
+        ${sentimentBadge(data.sentiment)}
+        <span class="font-mono text-slate-400">คะแนน: <span class="text-emerald-400 font-bold">${data.score}/100</span></span>
+      </div>
+      <div class="mb-2"><span class="text-slate-400">ปัญหา:</span> ${chipList(data.issues, 'bg-red-900/40 text-red-300')}</div>
+      <div class="mb-2"><span class="text-slate-400">ข้อดี:</span> ${chipList(data.positives, 'bg-emerald-900/40 text-emerald-300')}</div>
+      <div class="border-t border-slate-700 pt-2 mt-2"><span class="text-slate-400">คำแนะนำ:</span> <span class="text-amber-300">${escapeHtml(data.recommendation)}</span></div>
+    </div>
+  `;
+}
+
+// CSV upload
+const csvInput = document.getElementById('csv-input');
+const csvBtn = document.getElementById('csv-upload-btn');
+const csvLabel = document.getElementById('csv-label');
+
+csvInput.addEventListener('change', () => {
+  if (csvInput.files.length > 0) {
+    csvLabel.textContent = csvInput.files[0].name;
+    csvBtn.disabled = false;
+  }
+});
+
+csvBtn.addEventListener('click', async () => {
+  if (csvInput.files.length === 0) return;
+  const file = csvInput.files[0];
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('store_id', String(currentStoreId));
+
+  csvBtn.disabled = true;
+  csvBtn.textContent = 'กำลังประมวลผล...';
+  const prog = document.getElementById('csv-progress');
+  prog.classList.remove('hidden');
+  prog.textContent = 'กำลังส่งไฟล์ไปวิเคราะห์ด้วย AI...';
+
+  try {
+    const res = await fetch('/api/analyze/csv', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    const data = await res.json();
+    prog.innerHTML = `<span class="text-emerald-400">✓</span> ประมวลผล ${data.processed} รีวิว${data.errors.length ? ` · พบข้อผิดพลาด ${data.errors.length} รายการ` : ''}`;
+    csvInput.value = '';
+    csvLabel.textContent = 'คลิกหรือลากไฟล์ CSV มาที่นี่';
+    await loadStats();
+  } catch (e) {
+    prog.innerHTML = `<span class="text-red-400">✗</span> ${e.message}`;
+  } finally {
+    csvBtn.disabled = false;
+    csvBtn.textContent = 'อัปโหลดและวิเคราะห์';
+  }
+});
+
+document.getElementById('refresh-btn').addEventListener('click', loadAll);
+
+document.getElementById('clear-btn').addEventListener('click', async () => {
+  if (currentStoreId == null) return;
+  const current = storeList.find(s => s.id === currentStoreId);
+  const label = current ? `"${current.name}"` : '';
+  if (!confirm(`ลบรีวิวทั้งหมดของร้าน ${label}?`)) return;
+  await fetch(`/api/reviews?store_id=${currentStoreId}`, { method: 'DELETE' });
+  document.getElementById('single-result').classList.add('hidden');
+  await loadAll();
+  toast('ล้างข้อมูลแล้ว');
+});
+
+// --- API key setup flow ---
+const setupModal = document.getElementById('setup-modal');
+const setupClose = document.getElementById('setup-close');
+const setupTitle = document.getElementById('setup-title');
+const setupSubtitle = document.getElementById('setup-subtitle');
+const apiKeyInput = document.getElementById('api-key-input');
+const saveKeyBtn = document.getElementById('save-key-btn');
+const setupError = document.getElementById('setup-error');
+
+const PROVIDER_META = {
+  gemini: { name: 'Gemini', model: 'gemini-2.5-flash', label: 'API Key', placeholder: 'AIza...', url: 'https://aistudio.google.com/apikey', link: '→ รับ key ฟรีที่ Google AI Studio' },
+  groq:   { name: 'Groq',   model: 'llama-3.3-70b',    label: 'API Key', placeholder: 'gsk_...', url: 'https://console.groq.com/keys',  link: '→ รับ key ฟรีที่ console.groq.com' },
+};
+
+let setupStatus = null;
+
+function selectedProvider() {
+  const el = document.querySelector('input[name="provider"]:checked');
+  return el ? el.value : 'gemini';
+}
+
+function updateProviderUI() {
+  if (!setupStatus) return;
+  const provider = selectedProvider();
+  const meta = PROVIDER_META[provider];
+  const info = setupStatus.providers[provider];
+
+  const link = document.getElementById('provider-link');
+  link.href = meta.url;
+  link.textContent = meta.link + ' (เปิดในแท็บใหม่)';
+
+  document.getElementById('api-key-label').textContent = meta.label;
+  apiKeyInput.placeholder = meta.placeholder;
+
+  const currentKey = document.getElementById('current-key');
+  const currentKeyMasked = document.getElementById('current-key-masked');
+  if (info && info.last4) {
+    const maskLen = Math.max(4, (info.length || 8) - 4);
+    currentKeyMasked.textContent = '•'.repeat(Math.min(maskLen, 32)) + info.last4;
+    currentKey.classList.remove('hidden');
+  } else {
+    currentKey.classList.add('hidden');
+  }
+}
+
+function openSetup({ blocking, status }) {
+  setupStatus = status || { provider: 'gemini', providers: { gemini: {}, groq: {} } };
+  setupModal.classList.remove('hidden');
+  setupModal.classList.add('flex');
+  setupError.classList.add('hidden');
+  apiKeyInput.value = '';
+
+  const active = setupStatus.provider || 'gemini';
+  const radio = document.querySelector(`input[name="provider"][value="${active}"]`);
+  if (radio) radio.checked = true;
+
+  setupTitle.textContent = blocking ? 'ตั้งค่า AI Provider' : 'เปลี่ยน AI Provider / API Key';
+  setupSubtitle.textContent = blocking
+    ? 'เลือก provider แล้วใส่ API key เพื่อเริ่มใช้งาน'
+    : 'เปลี่ยน provider หรือวาง key ใหม่ — เว้นว่างเพื่อใช้ key เดิม';
+
+  updateProviderUI();
+  setupClose.classList.toggle('hidden', !!blocking === true);
+  setTimeout(() => apiKeyInput.focus(), 50);
+}
+
+document.querySelectorAll('input[name="provider"]').forEach(r => {
+  r.addEventListener('change', updateProviderUI);
+});
+
+function closeSetup() {
+  setupModal.classList.add('hidden');
+  setupModal.classList.remove('flex');
+}
+
+setupClose.addEventListener('click', closeSetup);
+
+saveKeyBtn.addEventListener('click', async () => {
+  const provider = selectedProvider();
+  const key = apiKeyInput.value.trim();
+  const currentInfo = setupStatus?.providers?.[provider];
+  if (!key && !(currentInfo && currentInfo.configured)) {
+    setupError.textContent = `กรุณาวาง API key สำหรับ ${PROVIDER_META[provider].name}`;
+    setupError.classList.remove('hidden');
+    return;
+  }
+  saveKeyBtn.disabled = true;
+  saveKeyBtn.textContent = 'กำลังบันทึก / ทดสอบ...';
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, key })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'บันทึกล้มเหลว');
+    }
+    closeSetup();
+    toast(`ใช้ ${PROVIDER_META[provider].name} แล้ว`);
+    updateProviderBadge(provider);
+    loadAll();
+  } catch (e) {
+    setupError.textContent = e.message;
+    setupError.classList.remove('hidden');
+  } finally {
+    saveKeyBtn.disabled = false;
+    saveKeyBtn.textContent = 'บันทึก';
+  }
+});
+
+function updateProviderBadge(provider) {
+  const badge = document.getElementById('provider-badge');
+  if (badge) badge.textContent = PROVIDER_META[provider]?.name || provider;
+}
+
+apiKeyInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveKeyBtn.click();
+});
+
+document.getElementById('settings-btn').addEventListener('click', async () => {
+  const r = await fetch('/api/config/status');
+  const status = await r.json();
+  openSetup({ blocking: false, status });
+});
+
+async function init() {
+  const r = await fetch('/api/config/status');
+  const status = await r.json();
+  updateProviderBadge(status.provider);
+  if (!status.configured) {
+    openSetup({ blocking: true, status });
+  } else {
+    loadAll();
+  }
+}
+
+init();
+</script>
+
+</body>
+</html>
